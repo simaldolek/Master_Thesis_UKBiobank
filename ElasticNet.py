@@ -23,6 +23,7 @@ l1_grid = [0.1, 0.3, 0.5, 0.7, 0.9]
 
 # load UKB data
 df = pd.read_csv(CSV_PATH)
+df = df.dropna(axis=0) # handle missing values 
 
 if DROP_ID_COL:
     df = df.iloc[:, 1:]  # drop ID column
