@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+# plot percentile selection
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -13,25 +14,21 @@ np.random.seed(RANDOM_STATE)
 
 
 CSV_PATH = "/opt/notebooks/FinalFeatures/ICA_Pearson_Full_Features.csv"
-TARGET_COL = "ptsd"
-DROP_ID_COL = True          
-DROP_LAST_DEMOG_COLS = 8    # last 8 columns are demographics - drop
-PERCENTILE = 50             # keep top 50%
+TARGET_COL = "ptsd"      
+DROP_DEMOG_COLS = 8    # last 8 columns are demographics for every feature dataframe
+PERCENTILE = 50        # keep top 50%
 
-C_grid = [0.01, 0.1, 1, 10]
+C_grid = [0.01, 0.1, 1]
 l1_grid = [0.1, 0.3, 0.5, 0.7, 0.9]
 
 # load UKB data
 df = pd.read_csv(CSV_PATH)
-df = df.dropna(axis=0) # handle missing values 
-
-if DROP_ID_COL:
-    df = df.iloc[:, 1:]  # drop ID column
+df = df.dropna(axis=0)
+df = df.iloc[:, 1:] 
 
 y = df[TARGET_COL].astype(int).to_numpy()
 X_df = df.drop(columns=[TARGET_COL])
-if DROP_LAST_DEMOG_COLS > 0:
-    X_df = X_df.iloc[:, :-DROP_LAST_DEMOG_COLS]
+X_df = X_df.iloc[:, :-DROP_DEMOG_COLS]
 
 X = X_df.to_numpy(dtype=np.float32) # to save memory
 
@@ -74,10 +71,9 @@ base_pipe = Pipeline(steps=[
         penalty="elasticnet",
         solver="saga",
         max_iter=5000,
-        tol=1e-3,              # for the large dataset
+        tol=1e-3,              
         class_weight=None,     
-        random_state=RANDOM_STATE,
-        n_jobs=-1,            
+        random_state=RANDOM_STATE,        
     ))
 ])
 
@@ -102,14 +98,12 @@ for outer_fold, (train_idx, test_idx) in enumerate(outer_cv.split(X, y)):
         param_grid=param_grid,
         scoring=balacc_scorer,
         cv=inner_cv,
-        n_jobs=-1,
         refit=True,
         verbose=0,
         return_train_score=False
     )
 
     search.fit(X_train, y_train)
-
 
     cvres = pd.DataFrame(search.cv_results_)
     for _, row in cvres.iterrows():
