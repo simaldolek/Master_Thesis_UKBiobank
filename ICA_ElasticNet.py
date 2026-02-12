@@ -235,8 +235,6 @@ for outer_i in range(5):
 
 pd.DataFrame(inner_rows).to_csv("inner_metrics.csv", index=False)
 pd.DataFrame(outer_rows).to_csv("outer_metrics.csv", index=False)
-
-# Save per-fold confusion matrix entries + sensitivity/specificity
 pd.DataFrame(outer_rows)[["outer_fold", "tn", "fp", "fn", "tp", "sensitivity", "specificity"]].to_csv(
     "outer_confusion_and_rates.csv", index=False
 )
