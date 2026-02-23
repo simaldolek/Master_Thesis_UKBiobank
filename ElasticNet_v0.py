@@ -6,7 +6,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import SelectPercentile, f_classif
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import 
+from sklearn.metrics import(
     balanced_accuracy_score,
     accuracy_score,
     precision_score,
@@ -31,6 +31,12 @@ df = pd.read_csv(CSV_PATH).dropna().iloc[:, 1:]  # drop index-like col
 y = df[TARGET_COL].astype(int).to_numpy()
 
 X_df = df.drop(columns=[TARGET_COL]).iloc[:, :-DROP_DEMOG_COLS]
+
+# for atlas features only due to 85K
+#F, _ = f_classif(X_df.to_numpy(np.float64), y)
+#top50 = np.argsort(np.nan_to_num(F, nan=-np.inf))[::-1][:50]
+#X_df = X_df.iloc[:, top50]
+
 feature_names = X_df.columns.to_numpy()
 X = X_df.to_numpy(np.float32)
 
@@ -40,7 +46,6 @@ pipe = Pipeline([
     ("screen", SelectPercentile(f_classif)),     
     ("scale", StandardScaler()),
     ("clf", LogisticRegression(
-        penalty="elasticnet",
         solver="saga",
         max_iter=5000,
         tol=1e-3,
@@ -89,7 +94,7 @@ for outer_fold, (tr, te) in enumerate(OUTER.split(X, y)):
     best = search.best_params_
     best_est = search.best_estimator_
 
-    # --- inner results 
+    # inner metrics
     cv = pd.DataFrame(search.cv_results_)
     inner_rows.append(
         cv.assign(
@@ -105,7 +110,7 @@ for outer_fold, (tr, te) in enumerate(OUTER.split(X, y)):
         })
     )
 
-    # outer test metrics
+    # outer metrics
     y_hat = best_est.predict(X[te])
     y_prob = best_est.predict_proba(X[te])[:,1]
 
@@ -139,11 +144,10 @@ topfeat_df = pd.DataFrame(topfeat_rows)
 
 inner_df.to_csv("inner_metrics.csv", index=False)
 outer_df.to_csv("outer_metrics.csv", index=False)
-outer_df[["outer_fold", "tn", "fp", "fn", "tp", "sensitivity", "specificity", "balanced_accuracy"]].to_csv(
+outer_df[["outer_fold","auc", "tn", "fp", "fn", "tp", "sensitivity", "specificity", "balanced_accuracy"]].to_csv(
     "outer_confusion_and_rates.csv", index=False
 )
 topfeat_df.to_csv("top50_features_per_outer_fold.csv", index=False)
 
-print("DONE")
-print(outer_df[["balanced_accuracy", "accuracy", "f1"]].mean())
-print("Saved: top50_features_per_outer_fold.csv")
+print("Mean metrics:")
+print(outer_df[["balanced_accuracy","accuracy","f1","auc"]].mean())
