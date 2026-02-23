@@ -6,13 +6,14 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import SelectPercentile, f_classif
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
+from sklearn.metrics import 
     balanced_accuracy_score,
     accuracy_score,
     precision_score,
     recall_score,
     f1_score,
     confusion_matrix,
+    roc_auc_score
 )
 
 # Config
@@ -106,7 +107,16 @@ for outer_fold, (tr, te) in enumerate(OUTER.split(X, y)):
 
     # outer test metrics
     y_hat = best_est.predict(X[te])
-    outer_rows.append({"outer_fold": outer_fold, **best, **fold_metrics(y[te], y_hat)})
+    y_prob = best_est.predict_proba(X[te])[:,1]
+
+    auc = roc_auc_score(y[te], y_prob)
+
+    outer_rows.append({
+        "outer_fold": outer_fold,
+        "auc": float(auc),
+        **best,
+        **fold_metrics(y[te], y_hat)})
+
 
     # top 50 features on the OUTER TRAIN split, by F-score from the fitted screen 
     screen = best_est.named_steps["screen"]
