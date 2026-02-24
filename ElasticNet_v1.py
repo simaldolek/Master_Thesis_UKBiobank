@@ -27,7 +27,7 @@ INNER = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
 
 
 # data 
-df = pd.read_csv(CSV_PATH).dropna().iloc[:, 1:]  # drop index-like col
+df = pd.read_csv(CSV_PATH).dropna().iloc[:, 1:] 
 y = df[TARGET_COL].astype(int).to_numpy()
 
 X_df = df.drop(columns=[TARGET_COL]).iloc[:, :-DROP_DEMOG_COLS]
@@ -89,7 +89,7 @@ for outer_fold, (tr, te) in enumerate(OUTER.split(X, y)):
     best = search.best_params_
     best_est = search.best_estimator_
 
-    # --- inner results 
+    # inner results 
     cv = pd.DataFrame(search.cv_results_)
     inner_rows.append(
         cv.assign(
@@ -118,7 +118,7 @@ for outer_fold, (tr, te) in enumerate(OUTER.split(X, y)):
         **fold_metrics(y[te], y_hat)})
 
 
-    # top 50 features on the OUTER TRAIN split, by F-score from the fitted screen 
+    # top 50 features on the OUTER TRAIN 
     screen = best_est.named_steps["screen"]
     scores = screen.scores_.copy()                       
     scores = np.nan_to_num(scores, nan=-np.inf)          
