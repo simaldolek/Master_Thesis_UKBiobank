@@ -43,7 +43,8 @@ pipe = Pipeline(
 )
 
 param_grid = {
-    "screen__percentile": [10, 30, 50],
+    # also ran 10, 30, 50 - same performance
+    "screen__percentile": [50, 70, 80],
     "clf__C": [0.01, 0.1, 1.0],
 }
 
