@@ -1,5 +1,5 @@
-%%bash
-dx download -r /CombinedAtlas_31016+31019 
+#%%bash
+#dx download -r /CombinedAtlas_31016+31019 
 
 import numpy as np
 import pandas as pd
@@ -10,7 +10,7 @@ hc_dir = Path("/opt/notebooks/HC")
 csv_files = sorted(hc_dir.glob("*.csv"))
 
 T = 490  # number of timepoints
-start_eid = "XXX"   # can resume from specific EID if session breaks etc.
+start_eid = "XXX"   # can resume from specific EID 
 started = False
 
 for csv_path in csv_files:
@@ -42,12 +42,11 @@ for csv_path in csv_files:
     np.save(out_path, Sigma_hat_atlas)
     
    
-# run in new notebook cell
-%%bash
-for f in /opt/notebooks/HC/*_Cov.npy; do
-  base=$(basename "$f")
-  dx upload "$f" --path "/Cov_Matrices/Atlas/HC/$base" 
-done
+#%%bash
+#for f in /opt/notebooks/HC/*_Cov.npy; do
+#  base=$(basename "$f")
+#  dx upload "$f" --path "/Cov_Matrices/Atlas/HC/$base" 
+#done
 
 
 
