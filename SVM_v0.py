@@ -25,7 +25,7 @@ OUTER = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
 INNER = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
 
 
-df = pd.read_csv(CSV_PATH).dropna().iloc[:, 1:]  # drop index-like first col if present
+df = pd.read_csv(CSV_PATH).dropna().iloc[:, 1:] 
 y = df[TARGET_COL].astype(int).to_numpy()
 
 X_df = df.drop(columns=[TARGET_COL]).iloc[:, :-DROP_DEMOG_COLS]
@@ -37,7 +37,6 @@ pipe = Pipeline(
     steps=[
         ("screen", SelectPercentile(score_func=f_classif)),
         ("scale", StandardScaler()),
-        # Linear SVM for comparable “linear model” behavior; probability=True enables ROC-AUC
         ("clf", SVC(kernel="linear", probability=True, class_weight="balanced", random_state=RANDOM_STATE)),
     ]
 )
