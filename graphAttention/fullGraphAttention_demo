@@ -2,7 +2,7 @@
 STAGIN workflow inspired by Kim et al. (NeurIPS 2021)
 
 Workflow:
-1. Standardize ROI time series across time.
+1. Standardize ROI time series across time [UKB already standardized.]
 2. Build dynamic FC graphs with a sliding window.
 3. Binarize each FC matrix by keeping the top percentile entries.
 4. Encode time with a GRU using ROI time series up to each window endpoint.
@@ -97,12 +97,9 @@ def build_dynamic_fc_graphs(
 
     Input: standardized_timeseries: [490, 100]
 
-    Returns:  node_identity: [W=128, 100, 100]
-            One-hot node identity matrix repeated across windows.
-        adjacency: [W=128, 100, 100]
-            Binary adjacency matrices from thresholded windowed FC.
-        endpoints: list[int]
-            Endpoints of the sliding windows, used by the timestamp encoder.
+    Output:  node_identity: [W, 100, 100], One-hot node identity matrix repeated across windows.
+        adjacency: [W, 100, 100], Binary adjacency matrices from thresholded windowed FC.
+        endpoints: list[int], Endpoints of the sliding windows, used by the timestamp encoder.
     """
     T, N = standardized_timeseries.shape
     endpoints = sliding_window_endpoints(T, window_size, window_stride)
@@ -120,9 +117,9 @@ def build_dynamic_fc_graphs(
 
         adjacency_per_window.append(binary_adjacency)
 
-    adjacency = torch.stack(adjacency_per_window, dim=0)                 # [W=128, 100, 100]
+    adjacency = torch.stack(adjacency_per_window, dim=0)                 # [W, 100, 100]
     node_identity = torch.eye(N, device=standardized_timeseries.device)
-    node_identity = node_identity.unsqueeze(0).repeat(len(endpoints), 1, 1)  # [W=128, 100, 100]
+    node_identity = node_identity.unsqueeze(0).repeat(len(endpoints), 1, 1)  # [W, 100, 100]
     return node_identity, adjacency, endpoints
 
 
