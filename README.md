@@ -4,9 +4,9 @@ Work-in-progress codebase for my MSc thesis on PTSD classification using resting
 
 ### Overview
 
-- **Feature extraction** full versus partial correlations (unregularized and Tikhonov) from atlas- and ICA-derived rs-fMRI representations
-- **Shallow baselines** for binary PTSD classification, including SVM and Elastic Net
-- **Dynamic graph networks with attention** for dynamic network construction, dimensionality reduction with transformers, and classification with MLPs
+- **Feature extraction:** full versus partial correlations (unregularized and Tikhonov) from atlas- and ICA-derived rs-fMRI representations
+- **Shallow baselines:** for binary PTSD classification, including SVM and Elastic Net
+- **Dynamic graph networks with attention:** for dynamic network construction, dimensionality reduction with transformers, and classification with MLPs
 
 ## Graph Attention Classifier Workflow
 
