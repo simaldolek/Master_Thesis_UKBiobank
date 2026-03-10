@@ -36,7 +36,7 @@ from torch.utils.data import DataLoader, Dataset
 N_ROIS = 100
 
 # HC/ and PTSD/ directly inside this directory
-DATA_ROOT = Path("./CombinedAtlas_31016+31019/100")
+DATA_ROOT = Path("opt/notebooks/CombinedAtlas_31016+31019/100/")
 TIMEPOINTS = 490
 OUTPUT_DIR = Path("./stagin_outputs")
 SEED = 26
@@ -93,7 +93,7 @@ def get_subject_csvs(data_root: Path) -> List[SubjectRecord]:
     for class_name, label in LABEL_TO_INDEX.items():
         class_dir = data_root / class_name
 
-        for csv_path in sorted(class_dir.rglob("*.csv")):
+        for csv_path in sorted(class_dir.rglob("*.txt")):
             records.append(
                 SubjectRecord(
                     csv_path=str(csv_path.resolve()),
@@ -107,7 +107,7 @@ def get_subject_csvs(data_root: Path) -> List[SubjectRecord]:
 
 
 def load_subject_timeseries(csv_path: str, expected_timepoints: int, expected_rois: int) -> np.ndarray:
-    df = pd.read_csv(csv_path, sep=r"\s+", header=None) # change for atlas csv / ICA space separated txt
+    df = pd.read_csv(csv_path, sep=r"\s+", header=None)  # change for atlas csv / ICA space separated txt
 
     numeric = df.apply(pd.to_numeric, errors="coerce").dropna(axis=0, how="all").dropna(axis=1, how="all")
     values = numeric.to_numpy(dtype=np.float32)
@@ -116,8 +116,11 @@ def load_subject_timeseries(csv_path: str, expected_timepoints: int, expected_ro
         return values
     if values.shape == (expected_rois, expected_timepoints):
         return values.T
-    )
 
+    raise ValueError(
+        f"Unexpected shape for {csv_path}: got {values.shape}, "
+        f"expected ({expected_timepoints}, {expected_rois}) or ({expected_rois}, {expected_timepoints})"
+    )
 
 def standardize_timeseries(timeseries: np.ndarray) -> np.ndarray:
 
