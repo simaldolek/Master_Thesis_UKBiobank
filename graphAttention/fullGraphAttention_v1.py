@@ -745,6 +745,11 @@ def main() -> None:
     records = get_subject_csvs(DATA_ROOT)
     print(f"Found {len(records)} subject CSVs.")
 
+    records, excluded_paths = screen_records(records=records,expected_timepoints=TIMEPOINTS, expected_rois=N_ROIS,
+                                             log_path=OUTPUT_DIR / "excluded_subjects.txt",)
+    print(f"{len(records)} subjects retained after screening.")
+
+
     class_counts = pd.Series([record.class_name for record in records]).value_counts().to_dict()
     print(f"Class counts: {class_counts}")
 
