@@ -122,6 +122,33 @@ def load_subject_timeseries(csv_path: str, expected_timepoints: int, expected_ro
         f"expected ({expected_timepoints}, {expected_rois}) or ({expected_rois}, {expected_timepoints})"
     )
 
+
+def screen_records(
+    records: List[SubjectRecord],
+    expected_timepoints: int,
+    expected_rois: int,
+    log_path: Path,
+) -> Tuple[List[SubjectRecord], List[str]]:
+    retained, excluded_paths = [], []
+
+    for record in records:
+        try:
+            ts = load_subject_timeseries(record.csv_path, expected_timepoints, expected_rois)
+            if ts.shape[0] == expected_timepoints:
+                retained.append(record)
+            else:
+                excluded_paths.append(f"{record.csv_path} | shape={ts.shape}")
+        except Exception as e:
+            excluded_paths.append(f"{record.csv_path} | error={e}")
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(f"Excluded {len(excluded_paths)} of {len(records)} subjects\n\n")
+        f.writelines(f"{entry}\n" for entry in excluded_paths)
+
+    return retained, excluded_paths
+
+
 def standardize_timeseries(timeseries: np.ndarray) -> np.ndarray:
 
     mean = timeseries.mean(axis=0, keepdims=True)
