@@ -6,6 +6,7 @@ Improved version of fullGraphAttention_v1.py. What's NEW:
 - Added early stopping + increased epochs (20 to 60)
 - Implemented gradient clipping
 - Increased drop-out (0.1 to 0.4)
+- Increased num layers (2 to 4) + hidden dim (64 to 128)
 """
 
 from dataclasses import asdict, dataclass
@@ -53,8 +54,8 @@ ADD_SELF_LOOPS = True
 STANDARDIZE_EACH_ROI = True
 
 # STAGIN architecture
-HIDDEN_DIM = 64
-NUM_LAYERS = 2
+HIDDEN_DIM = 128
+NUM_LAYERS = 4
 NUM_CLASSES = 2
 TEMPORAL_NUM_HEADS = 1
 DROPOUT = 0.4 
@@ -85,20 +86,15 @@ class SubjectRecord:
 
 def get_subject_csvs(data_root: Path) -> List[SubjectRecord]:
     records: List[SubjectRecord] = []
-
     for class_name, label in LABEL_TO_INDEX.items():
         class_dir = data_root / class_name
-
         for csv_path in sorted(class_dir.rglob("*.txt")):
-            records.append(
-                SubjectRecord(
-                    csv_path=str(csv_path.resolve()),
-                    subject_id=csv_path.stem,
-                    class_name=class_name,
-                    label=label,
-                )
-            )
-
+            records.append(SubjectRecord(
+                csv_path=str(csv_path.resolve()),
+                subject_id=csv_path.stem,
+                class_name=class_name,
+                label=label,
+            ))
     return records
 
 
@@ -591,8 +587,13 @@ class STAGIN(nn.Module):
 # TRAINING AND EVALUATION
 # =============================================================================
 
-def compute_loss(output: STAGINOutput, labels: torch.Tensor, reg_lambda: float) -> torch.Tensor:
-    classification_loss = F.cross_entropy(output.logits, labels)
+def compute_loss(output: STAGINOutput, labels: torch.Tensor, 
+                 reg_lambda: float, class_weights: torch.Tensor | None = None,) -> torch.Tensor:
+    classification_loss = F.cross_entropy(
+        output.logits, labels,
+        weight=class_weights,
+        label_smoothing=0.1,
+    )
     return classification_loss + reg_lambda * output.orthogonality_penalty
 
 
@@ -602,6 +603,7 @@ def evaluate_model(
     loader: DataLoader,
     reg_lambda: float,
     device: str,
+    class_weights: torch.Tensor | None = None,
 ) -> Tuple[Dict[str, float], pd.DataFrame]:
     model.eval()
 
@@ -621,7 +623,7 @@ def evaluate_model(
         endpoints = batch["endpoints"]
 
         output = model(node_identity, adjacency, t_seq, endpoints)
-        loss = compute_loss(output, labels, reg_lambda)
+        loss = compute_loss(output, labels, reg_lambda, class_weights)
 
         probabilities = torch.softmax(output.logits, dim=1)
         pred_labels = probabilities.argmax(dim=1)
@@ -694,6 +696,7 @@ def run_one_epoch(
     optimizer: torch.optim.Optimizer,
     reg_lambda: float,
     device: str,
+    class_weights: torch.Tensor | None = None,
 ) -> float:
     model.train()
     total_loss = 0.0
@@ -708,7 +711,7 @@ def run_one_epoch(
 
         optimizer.zero_grad()
         output = model(node_identity, adjacency, t_seq, endpoints)
-        loss = compute_loss(output, labels, reg_lambda)
+        loss = compute_loss(output, labels, reg_lambda, class_weights)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # NEW
         optimizer.step()
@@ -793,7 +796,9 @@ def main() -> None:
     records, excluded_paths = screen_records(records=records,expected_timepoints=TIMEPOINTS, expected_rois=N_ROIS,
                                              log_path=OUTPUT_DIR / "excluded_subjects.txt",)
     print(f"{len(records)} subjects retained after screening.")
-
+    
+    rng = random.Random(SEED)
+    rng.shuffle(records)
 
     class_counts = pd.Series([record.class_name for record in records]).value_counts().to_dict()
     print(f"Class counts: {class_counts}")
@@ -804,6 +809,12 @@ def main() -> None:
         val_size_within_train=VAL_SIZE_WITHIN_TRAIN,
         seed=SEED,
     )
+
+    train_labels = torch.tensor([r.label for r in train_records], dtype=torch.float32)
+    n_hc   = (train_labels == 0).sum()
+    n_ptsd = (train_labels == 1).sum()
+    class_weights = torch.tensor([n_ptsd / n_hc, 1.0], dtype=torch.float32).to(DEVICE)
+
 
     save_records_csv(train_records, OUTPUT_DIR / "train_split.csv")
     save_records_csv(val_records, OUTPUT_DIR / "val_split.csv")
@@ -845,7 +856,7 @@ def main() -> None:
     optimizer,
     mode='max',         # maximize val AUROC
     factor=0.5,
-    patience=3,
+    patience=4,
     min_lr=1e-5,)
 
 
@@ -854,11 +865,11 @@ def main() -> None:
     training_history: List[Dict[str, float]] = []
 
 
-    early_stopper = EarlyStopping(patience=7)
+    early_stopper = EarlyStopping(patience=12)
 
     for epoch in range(1, EPOCHS + 1):
-        train_loss = run_one_epoch(model, train_loader, optimizer, REG_LAMBDA, DEVICE)
-        val_metrics, _ = evaluate_model(model, val_loader, REG_LAMBDA, DEVICE)
+        train_loss = run_one_epoch(model, train_loader, optimizer, REG_LAMBDA, DEVICE, class_weights)
+        val_metrics, _ = evaluate_model(model, val_loader, REG_LAMBDA, DEVICE, class_weights)
 
         epoch_summary = {
             "epoch": epoch,
@@ -895,7 +906,7 @@ def main() -> None:
     if best_model_path.exists():
         model.load_state_dict(torch.load(best_model_path, map_location=DEVICE))
 
-    test_metrics, test_predictions = evaluate_model(model, test_loader, REG_LAMBDA, DEVICE)
+    test_metrics, test_predictions = evaluate_model(model, test_loader, REG_LAMBDA, DEVICE, class_weights)
     test_predictions.to_csv(OUTPUT_DIR / "test_predictions.csv", index=False)
 
     metrics_payload = {
