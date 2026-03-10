@@ -4,7 +4,6 @@ from __future__ import annotations
 Improved version of fullGraphAttention_v2.py. What's NEW:
 - added collate_adjacency to convert dense adjacency to sparse
 - Removed scheduler, early stopping, and class weights
-- New percentile class
 - Flatten h before loop, pass sparse adj, accumulate logit += per layer, use row-wise ortho normalization
 
 """
@@ -421,44 +420,9 @@ class TemporalTransformer(nn.Module):
         attended = self.norm2(attended + self.dropout2(ff))
         return attended, time_attention
 
-
-
-class Percentile(torch.autograd.Function):
-    """Differentiable percentile, from https://github.com/aliutkus/torchpercentile"""
-
-    def __init__(self):
-        super().__init__()
-
-    def __call__(self, input, percentiles):
-        return self.forward(input, percentiles)
-
-    def forward(self, input, percentiles):
-        input = torch.flatten(input)
-        input_dtype = input.dtype
-        input_shape = input.shape
-        if isinstance(percentiles, int):
-            percentiles = (percentiles,)
-        if not isinstance(percentiles, torch.Tensor):
-            percentiles = torch.tensor(percentiles, dtype=torch.double)
-        input = input.double()
-        percentiles = percentiles.to(input.device).double()
-        input = input.view(input.shape[0], -1)
-        in_sorted, in_argsort = torch.sort(input, dim=0)
-        positions = percentiles * (input.shape[0] - 1) / 100
-        floored = torch.floor(positions)
-        ceiled = floored + 1
-        ceiled[ceiled > input.shape[0] - 1] = input.shape[0] - 1
-        weight_ceiled = positions - floored
-        weight_floored = 1.0 - weight_ceiled
-        d0 = in_sorted[floored.long(), :] * weight_floored[:, None]
-        d1 = in_sorted[ceiled.long(), :] * weight_ceiled[:, None]
-        result = (d0 + d1).view(-1, *input_shape[1:])
-        return result.type(input_dtype)
-
 # =============================================================================
 # FULL MODEL
 # =============================================================================
-
 
 @dataclass
 class STAGINOutput:
@@ -503,7 +467,6 @@ class STAGIN(nn.Module):
         self.readout_name = readout
         self.time_pool = time_pool
         self.reg_lambda = reg_lambda
-        self.percentile = Percentile()
 
         self.timestamp_encoder = TimestampEncoder(input_dim=num_nodes, hidden_dim=hidden_dim)
         self.initial_linear = nn.Linear(num_nodes + hidden_dim, hidden_dim)
@@ -549,8 +512,7 @@ class STAGIN(nn.Module):
         i_list, v_list = [], []
         for sample, _dyn_a in enumerate(a):
             for timepoint, _a in enumerate(_dyn_a):
-                thresholded_a = (_a > self.percentile(_a, 100 - TOP_PERCENT))
-                _i = thresholded_a.nonzero(as_tuple=False)
+                _i = _a.nonzero(as_tuple=False)
                 _v = torch.ones(len(_i))
                 _i = _i + sample * a.shape[1] * a.shape[2] + timepoint * a.shape[2]
                 i_list.append(_i)
@@ -646,7 +608,7 @@ class STAGIN(nn.Module):
         time_attention_out = torch.stack(per_layer_time_attention, dim=1)
 
         return STAGINOutput(
-            logits=logit.squeeze(1),
+            logits=logit,
             node_attention=node_attention_out,
             time_attention=time_attention_out,
             layer_latent=layer_latent,
@@ -671,7 +633,6 @@ def evaluate_model(
     loader: DataLoader,
     reg_lambda: float,
     device: str,
-    class_weights: torch.Tensor | None = None,
 ) -> Tuple[Dict[str, float], pd.DataFrame]:
     model.eval()
 
@@ -764,7 +725,6 @@ def run_one_epoch(
     optimizer: torch.optim.Optimizer,
     reg_lambda: float,
     device: str,
-    class_weights: torch.Tensor | None = None,
 ) -> float:
     model.train()
     total_loss = 0.0
@@ -781,7 +741,6 @@ def run_one_epoch(
         output = model(node_identity, adjacency, t_seq, endpoints)
         loss = compute_loss(output, labels, reg_lambda)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # NEW
         optimizer.step()
 
         batch_size = labels.shape[0]
@@ -860,12 +819,6 @@ def main() -> None:
         seed=SEED,
     )
 
-    train_labels = torch.tensor([r.label for r in train_records], dtype=torch.float32)
-    n_hc   = (train_labels == 0).sum()
-    n_ptsd = (train_labels == 1).sum()
-    class_weights = torch.tensor([n_ptsd / n_hc, 1.0], dtype=torch.float32).to(DEVICE)
-
-
     save_records_csv(train_records, OUTPUT_DIR / "train_split.csv")
     save_records_csv(val_records, OUTPUT_DIR / "val_split.csv")
     save_records_csv(test_records, OUTPUT_DIR / "test_split.csv")
@@ -900,14 +853,7 @@ def main() -> None:
         reg_lambda=REG_LAMBDA,
     ).to(DEVICE)
 
-    
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    optimizer,
-    mode='max',         # maximize val AUROC
-    factor=0.5,
-    patience=4,
-    min_lr=1e-5,)
-
 
     best_val_auroc = -float("inf")
     best_model_path = OUTPUT_DIR / "best_model.pt"
@@ -915,8 +861,8 @@ def main() -> None:
 
 
     for epoch in range(1, EPOCHS + 1):
-        train_loss = run_one_epoch(model, train_loader, optimizer, REG_LAMBDA, DEVICE, class_weights)
-        val_metrics, _ = evaluate_model(model, val_loader, REG_LAMBDA, DEVICE, class_weights)
+        train_loss = run_one_epoch(model, train_loader, optimizer, REG_LAMBDA, DEVICE)
+        val_metrics, _ = evaluate_model(model, val_loader, REG_LAMBDA, DEVICE)
 
         epoch_summary = {
             "epoch": epoch,
@@ -945,9 +891,10 @@ def main() -> None:
             torch.save(model.state_dict(), best_model_path)
       
     if best_model_path.exists():
-        model.load_state_dict(torch.load(best_model_path, map_location=DEVICE))
+        model.load_state_dict(torch.load(best_model_path, map_location=DEVICE, weights_only=True))
 
-    test_metrics, test_predictions = evaluate_model(model, test_loader, REG_LAMBDA, DEVICE, class_weights)
+
+    test_metrics, test_predictions = evaluate_model(model, test_loader, REG_LAMBDA, DEVICE)
     test_predictions.to_csv(OUTPUT_DIR / "test_predictions.csv", index=False)
 
     metrics_payload = {
